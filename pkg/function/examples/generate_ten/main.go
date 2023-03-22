@@ -9,26 +9,27 @@ import (
 	"github.com/numaproj/numaflow-go/pkg/function/server"
 )
 
-var genKey = 0
-var keyLock sync.RWMutex
+type threadSafeInt struct {
+	val int
+	sync.RWMutex
+}
+
+func (t *threadSafeInt) incrementAndGet() int {
+	t.Lock()
+	defer t.Unlock()
+	if t.val == 10 {
+		t.val = 0
+	}
+	t.val += 1
+	return t.val
+}
+
+var genKey = threadSafeInt{}
 
 func handle(_ context.Context, key string, d functionsdk.Datum) functionsdk.Messages {
 	msg := d.Value()
-	_ = d.EventTime() // Event time is available
-	_ = d.Watermark() // Watermark is available
-	keyLock.RLock()
-	if genKey == 10 {
-		keyLock.RUnlock()
-		keyLock.Lock()
-		genKey = 0
-		keyLock.Unlock()
-	} else {
-		keyLock.RUnlock()
-	}
-	keyLock.Lock()
-	genKey++
-	keyLock.Unlock()
-	return functionsdk.MessagesBuilder().Append(functionsdk.MessageTo(strconv.Itoa(genKey), msg))
+	outputKey := genKey.incrementAndGet()
+	return functionsdk.MessagesBuilder().Append(functionsdk.MessageTo(strconv.Itoa(outputKey), msg))
 }
 
 func main() {
